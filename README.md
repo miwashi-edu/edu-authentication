@@ -8,7 +8,7 @@
 #Create directory for react application
 mkdir basic-auth && cd basic-auth
 
-mkdir p {src/routes}
+mkdir -p src/routes
 touch ./src/service.js
 touch ./src/server.js
 touch ./src/routes/auth_routes.js
@@ -21,6 +21,7 @@ npm install express
 npm install -D nodemon jest
 
 # Set up scripts in package.json
+npm pkg set main="./src/service.js"
 npm pkg set scripts.start="node ./src/service.js"
 npm pkg set scripts.dev="nodemon ./src/service.js"
 npm pkg set scripts.test="jest"
