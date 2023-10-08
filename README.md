@@ -134,27 +134,3 @@ sequenceDiagram
     B->>U: Display open page
 
 ```
-
-## Topology
-
-```mermaid
-graph LR
-    A[User] -->|Enter URL| B(Browser)
-    B -->|GET Request| C[Server]
-    C -->|401 Unauthorized<br>WWW-Authenticate: Basic| D{Login Prompt}
-    D -->|Enter Credentials| E(Browser)
-    E -->|GET Request<br>Authorization: Basic credentials| F[Server]
-    F --> G{Credentials Valid?}
-    G -->|Yes| H[200 OK<br>Send Content]
-    G -->|No| I[401 Unauthorized]
-    H --> J(Browser)
-    J --> K[Display Page]
-    I --> L(Browser)
-    L --> D
-```
-
-## Server.js
-
-```js
-
-```
