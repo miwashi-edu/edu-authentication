@@ -47,7 +47,7 @@ EOF
 ```bash
 cat > src/server.js << 'EOF'
 const express = require('express');
-const authRoutes = require('./src/routes/auth_routes');
+const authRoutes = require('./routes/auth_routes');
 
 const app = express();
 
@@ -62,7 +62,7 @@ EOF
 ```bash
 cat > src/routes/auth_routes.js << 'EOF'
 const express = require('express');
-const basicAuthMiddleware = require('../middleware/basicAuthMiddleware');
+const basicAuthMiddleware = require('../middleware/basic_auth');
 
 const router = express.Router();
 
