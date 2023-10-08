@@ -67,7 +67,7 @@ module.exports = app;
 EOF
 ```
 
-### src/service.js
+### src/routes/auth_routes.js
 
 ```bash
 cat > src/routes/auth_routes.js << 'EOF'
