@@ -6,7 +6,7 @@
 
 ```bash
 #Create directory for react application
-mkdir basic-auth && cd basic-auth
+mkdir session-auth && cd session-auth
 
 mkdir -p src/routes
 touch ./src/service.js
