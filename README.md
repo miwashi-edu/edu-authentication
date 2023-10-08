@@ -16,7 +16,7 @@ touch ./src/routes/auth_routes.js
 # Initialize a new Node.js project
 npm init -y
 
-# Install React, ReactDOM, and React Scripts
+# Install packages
 npm install express 
 npm install -D nodemon jest
 
