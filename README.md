@@ -5,19 +5,22 @@
 ### Project
 
 ```bash
-#Create directory for react application
+#Create directory for server
 mkdir basic-auth && cd basic-auth
 
-mkdir -p src/routes
+mkdir -p {src/routes,src/middleware}
 touch ./src/service.js
 touch ./src/server.js
 touch ./src/routes/auth_routes.js
+touch ./src/middleware/basic_auth.js
+touch ./src/middleware/users.js
 
 # Initialize a new Node.js project
 npm init -y
 
 # Install packages
-npm install express 
+npm install express
+npm install basic-auth
 npm install -D nodemon jest
 
 # Set up scripts in package.json
@@ -27,8 +30,7 @@ npm pkg set scripts.dev="nodemon ./src/service.js"
 npm pkg set scripts.test="jest"
 ```
 
-### src/service.js
-
+## ./src/service.js
 ```bash
 cat > src/service.js << 'EOF'
 const app = require('./server');
@@ -41,208 +43,83 @@ app.listen(PORT, () => {
 EOF
 ```
 
-### src/server.js
-
+## ./src/server.js
 ```bash
 cat > src/server.js << 'EOF'
 const express = require('express');
-const bodyParser = require('body-parser');
-const session = require('express-session');
-const authRoutes = require('./auth_routes');
+const authRoutes = require('./src/routes/auth_routes');
 
 const app = express();
-
-// Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(session({
-    secret: 'your_secret_key',
-    resave: false,
-    saveUninitialized: true
-}));
 
 // Use auth routes
 app.use(authRoutes);
 
-module.exports = app;
+module.exports = app;  // Exporting app to be used in service.js
 EOF
 ```
 
-### src/service.js
-
+## ./src/routes/auth_routes.js
 ```bash
 cat > src/routes/auth_routes.js << 'EOF'
 const express = require('express');
+const basicAuthMiddleware = require('../middleware/basicAuthMiddleware');
+
 const router = express.Router();
 
-// Mock user
-const user = {
-    username: 'user',
-    password: 'password'
-};
-
-// Routes
-router.get('/', (req, res) => {
-    const isLoggedIn = req.session.isLoggedIn;
-    res.send(`
-        <h1>Welcome</h1>
-        <p>${isLoggedIn ? 'Logged in' : 'Not logged in'}</p>
-        <a href="/login">Login</a> | <a href="/logout">Logout</a>
-    `);
+router.get('/open', (req, res) => {
+    res.send('This is an open page, no authentication required!');
 });
 
-router.get('/login', (req, res) => {
-    res.send(`
-        <h1>Login</h1>
-        <form method="post" action="/login">
-            Username: <input type="text" name="username" required><br>
-            Password: <input type="password" name="password" required><br>
-            <input type="submit" value="Login">
-        </form>
-    `);
+router.use('/protected', basicAuthMiddleware);
+
+router.get('/protected', (req, res) => {
+    res.send('This is a protected route, authentication required!');
 });
 
-router.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    if (username === user.username && password === user.password) {
-        req.session.isLoggedIn = true;
-        res.redirect('/');
-    } else {
-        res.send('Invalid credentials. <a href="/login">Try again</a>');
-    }
+router.get('/protected/another', (req, res) => {
+    res.send('This is another protected route, authentication required!');
 });
 
-router.get('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            return res.redirect('/');
-        }
-        res.redirect('/');
-    });
+router.get('/safe',basicAuthMiddleware, (req, res) => {
+    res.send('This is another protected route, authentication required!');
 });
 
 module.exports = router;
 EOF
 ```
 
-## Sequence Diagram
+## ./src/middleware/basic_auth.js
+```bash
+cat > src/middleware/basic_auth.js << 'EOF'
+const basicAuth = require('basic-auth');
+const { users } = require('./users');  // Assume you have a users module
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Client
-    participant S as Server
+const basicAuthMiddleware = (req, res, next) => {
+    const userCredentials = basicAuth(req);
 
-    U->>C: Enter Username & Password
-    Note right of U: User provides<br/>credentials
-    C->>S: Request with credentials
-    Note right of C: Credentials are<br/>base64 encoded<br/>and sent in<br/>Authorization header
-    S->>S: Validate credentials
-    Note right of S: Server checks<br/>credentials against<br/>stored values
-    alt Authentication Successful
-        S->>C: 200 OK (with content)
-        Note right of S: Server sends<br/>requested content
-    else Authentication Failed
-        S->>C: 401 Unauthorized
-        Note right of S: Server requests<br/>authentication
-    end
-```
+    if (!userCredentials || !isValidUser(userCredentials.name, userCredentials.pass)) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="Example"');
+        return res.status(401).send('Authentication required');
+    }
 
-## Topology
-
-```mermaid
-graph TB
-    subgraph "Client"
-        A[Browser] 
-    end
-    
-    subgraph "Express App"
-        B[GET '/'] --> C{LoggedIn}
-        C -->|Yes| D[Home Logged In]
-        C -->|No| E[Home Not Logged In]
-        B --> F[GET Login]
-        F --> G[Login Page]
-        B --> H[POST Login]
-        H --> I{ValidCredentials}
-        I -->|Yes| J[Set Session Redirect to Root]
-        I -->|No| K[Invalid Credentials]
-        B --> L[GET Logout]
-        L --> M[Destroy Session Redirect to Root]
-    end
-    
-    A --> B
-    A --> F
-    A --> H
-    A --> L
-
-
-```
-
-## Server.js
-
-```js
-const express = require('express');
-const bodyParser = require('body-parser');
-const session = require('express-session');
-
-const app = express();
-const PORT = 3000;
-
-// Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(session({
-    secret: 'your_secret_key',
-    resave: false,
-    saveUninitialized: true
-}));
-
-// Mock user
-const user = {
-    username: 'user',
-    password: 'password'
+    next();
 };
 
-// Routes
-app.get('/', (req, res) => {
-    const isLoggedIn = req.session.isLoggedIn;
-    res.send(`
-        <h1>Welcome</h1>
-        <p>${isLoggedIn ? 'Logged in' : 'Not logged in'}</p>
-        <a href="/login">Login</a> | <a href="/logout">Logout</a>
-    `);
-});
+const isValidUser = (username, password) => {
+    const user = users.find(u => u.username === username);
+    return user && user.password === password;
+};
 
-app.get('/login', (req, res) => {
-    res.send(`
-        <h1>Login</h1>
-        <form method="post" action="/login">
-            Username: <input type="text" name="username" required><br>
-            Password: <input type="password" name="password" required><br>
-            <input type="submit" value="Login">
-        </form>
-    `);
-});
+module.exports = basicAuthMiddleware;
+EOF
+```
 
-app.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    if (username === user.username && password === user.password) {
-        req.session.isLoggedIn = true;
-        res.redirect('/');
-    } else {
-        res.send('Invalid credentials. <a href="/login">Try again</a>');
-    }
-});
-
-app.get('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            return res.redirect('/');
-        }
-        res.redirect('/');
-    });
-});
-
-// Server
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
+## ./src/middleware/users.js
+```bash
+cat > src/middleware/users.js << 'EOF'
+exports.users = [
+    { username: 'user1', password: 'password1' },
+    { username: 'user2', password: 'password2' }
+];
+EOF
 ```
