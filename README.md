@@ -1,4 +1,4 @@
-# edu-authentication - Basic Auth
+# edu-authentication - Session Based Auth
 
 ## Instructions
 
@@ -11,13 +11,15 @@ mkdir session-auth && cd session-auth
 mkdir -p src/routes
 touch ./src/service.js
 touch ./src/server.js
-touch ./src/routes/auth_routes.js
+touch ./src/routes/public_routes.js
+touch ./src/routes/secret_routes.js
 
 # Initialize a new Node.js project
 npm init -y
 
 # Install packages
-npm install express 
+npm install express
+npm install express-session
 npm install -D nodemon jest
 
 # Set up scripts in package.json
@@ -46,24 +48,51 @@ EOF
 ```bash
 cat > src/server.js << 'EOF'
 const express = require('express');
-const bodyParser = require('body-parser');
 const session = require('express-session');
-const authRoutes = require('./auth_routes');
+
+const publicRoutes = require('./routes/public_routes');
+const secretRoutes = require('./routes/secret_routes');
+const authRoutes = require('./routes/auth_routes');
+
 
 const app = express();
 
-// Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use(session({
     secret: 'your_secret_key',
     resave: false,
-    saveUninitialized: true
+    saveUninitialized: true,
+    cookie: { secure: false } // for development
 }));
 
-// Use auth routes
-app.use(authRoutes);
+app.use(publicRoutes);
+app.use('/secret', secretRoutes);
+app.use('/auth', authRoutes);
 
 module.exports = app;
+EOF
+```
+
+### src/routes/public_routes.js
+
+```bash
+cat > src/routes/public_routes.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+
+router.get('/', (req, res) => {
+    const greeting = () => req.session.user ? `Hello, ${req.session.user.username}` : 'Hello, guest';
+
+    res.send(`
+        <h1>${greeting()} Welcome to the public area</h1>
+        <p><a href="/auth/login">Login</a></p>
+        <p><a href="/secret/">Secret</a></p>
+    `);
+});
+
+module.exports = router;
 EOF
 ```
 
@@ -74,28 +103,14 @@ cat > src/routes/auth_routes.js << 'EOF'
 const express = require('express');
 const router = express.Router();
 
-// Mock user
-const user = {
-    username: 'user',
-    password: 'password'
-};
-
-// Routes
-router.get('/', (req, res) => {
-    const isLoggedIn = req.session.isLoggedIn;
-    res.send(`
-        <h1>Welcome</h1>
-        <p>${isLoggedIn ? 'Logged in' : 'Not logged in'}</p>
-        <a href="/login">Login</a> | <a href="/logout">Logout</a>
-    `);
-});
-
 router.get('/login', (req, res) => {
     res.send(`
         <h1>Login</h1>
-        <form method="post" action="/login">
-            Username: <input type="text" name="username" required><br>
-            Password: <input type="password" name="password" required><br>
+        <form method="post" action="/auth/login">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required><br>
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required><br>
             <input type="submit" value="Login">
         </form>
     `);
@@ -103,23 +118,54 @@ router.get('/login', (req, res) => {
 
 router.post('/login', (req, res) => {
     const { username, password } = req.body;
-    if (username === user.username && password === user.password) {
-        req.session.isLoggedIn = true;
-        res.redirect('/');
-    } else {
-        res.send('Invalid credentials. <a href="/login">Try again</a>');
+
+    // TODO: Validate credentials and handle login logic
+
+    req.session.user = { username };
+    res.redirect('/secret');
+});
+
+router.post('/logout', (req, res) => {
+    req.session.destroy();
+    res.redirect('/auth/login');
+});
+
+module.exports = router;
+EOF
+```
+
+### src/routes/secret_routes.js
+
+```bash
+cat > src/routes/secret_routes.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+
+const isAuthenticated = (req, res, next) => {
+    if (req.session && req.session.user) {
+        return next();
     }
-});
+    
+    return res.status(401).send(`
+        <h1>You are not authenticated</h1>
+        <p><a href="/">Back</a></p>
+    `);
+};
 
-router.get('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            return res.redirect('/');
-        }
-        res.redirect('/');
-    });
-});
+router.use(isAuthenticated);
 
+router.get('/', (req, res) => {
+    
+    const greeting = () => req.session.user ? `Hello, ${req.session.user.username}` : 'Hello, guest';
+    
+    res.send(`
+        <h1>${greeting()} Welcome to the secret area</h1>
+        <p><a href="/">Back</a></p>
+        <form method="POST" action="/auth/logout">
+            <input type="submit" value="Logout">
+        </form>
+    `);
+});
 module.exports = router;
 EOF
 ```
@@ -129,120 +175,25 @@ EOF
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant C as Client
     participant S as Server
+    participant DB as Database
 
-    U->>C: Enter Username & Password
-    Note right of U: User provides<br/>credentials
-    C->>S: Request with credentials
-    Note right of C: Credentials are<br/>base64 encoded<br/>and sent in<br/>Authorization header
-    S->>S: Validate credentials
-    Note right of S: Server checks<br/>credentials against<br/>stored values
-    alt Authentication Successful
-        S->>C: 200 OK (with content)
-        Note right of S: Server sends<br/>requested content
-    else Authentication Failed
-        S->>C: 401 Unauthorized
-        Note right of S: Server requests<br/>authentication
+    U->>S: Request root page
+    S->>U: Send welcome page with login link
+
+    U->>S: Request secret page
+    alt User is not authenticated
+        S->>U: Redirect to login page
+        U->>S: Submit credentials (username, password)
+        S->>DB: Validate credentials
+        alt Credentials are valid
+            S->>S: Create session
+            S->>U: Redirect to secret page
+        else Credentials are invalid
+            S->>U: Display error message
+        end
+    else User is authenticated
+        S->>U: Display secret page
     end
-```
 
-## Topology
-
-```mermaid
-graph TB
-    subgraph "Client"
-        A[Browser] 
-    end
-    
-    subgraph "Express App"
-        B[GET '/'] --> C{LoggedIn}
-        C -->|Yes| D[Home Logged In]
-        C -->|No| E[Home Not Logged In]
-        B --> F[GET Login]
-        F --> G[Login Page]
-        B --> H[POST Login]
-        H --> I{ValidCredentials}
-        I -->|Yes| J[Set Session Redirect to Root]
-        I -->|No| K[Invalid Credentials]
-        B --> L[GET Logout]
-        L --> M[Destroy Session Redirect to Root]
-    end
-    
-    A --> B
-    A --> F
-    A --> H
-    A --> L
-
-
-```
-
-## Server.js
-
-```js
-const express = require('express');
-const bodyParser = require('body-parser');
-const session = require('express-session');
-
-const app = express();
-const PORT = 3000;
-
-// Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(session({
-    secret: 'your_secret_key',
-    resave: false,
-    saveUninitialized: true
-}));
-
-// Mock user
-const user = {
-    username: 'user',
-    password: 'password'
-};
-
-// Routes
-app.get('/', (req, res) => {
-    const isLoggedIn = req.session.isLoggedIn;
-    res.send(`
-        <h1>Welcome</h1>
-        <p>${isLoggedIn ? 'Logged in' : 'Not logged in'}</p>
-        <a href="/login">Login</a> | <a href="/logout">Logout</a>
-    `);
-});
-
-app.get('/login', (req, res) => {
-    res.send(`
-        <h1>Login</h1>
-        <form method="post" action="/login">
-            Username: <input type="text" name="username" required><br>
-            Password: <input type="password" name="password" required><br>
-            <input type="submit" value="Login">
-        </form>
-    `);
-});
-
-app.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    if (username === user.username && password === user.password) {
-        req.session.isLoggedIn = true;
-        res.redirect('/');
-    } else {
-        res.send('Invalid credentials. <a href="/login">Try again</a>');
-    }
-});
-
-app.get('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            return res.redirect('/');
-        }
-        res.redirect('/');
-    });
-});
-
-// Server
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
 ```
