@@ -17,7 +17,9 @@ touch ./src/routes/auth_routes.js
 npm init -y
 
 # Install packages
-npm install express 
+npm install express
+npm install express-session
+npm install body-parser
 npm install -D nodemon jest
 
 # Set up scripts in package.json
@@ -48,7 +50,7 @@ cat > src/server.js << 'EOF'
 const express = require('express');
 const bodyParser = require('body-parser');
 const session = require('express-session');
-const authRoutes = require('./auth_routes');
+const authRoutes = require('./routes/auth_routes');
 
 const app = express();
 
